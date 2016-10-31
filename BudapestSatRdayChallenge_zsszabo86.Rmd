@@ -1,0 +1,177 @@
+---
+title: "Budapest SatRday Challenge"
+author: "Zsuzsanna Szabó (zsszabo86@gmail.com)"
+date: "August 26, 2016"
+output: html_document
+---
+
+#Monthly sales efficiency of incoming BUD flights with a focus on countries with top number of passengers
+
+##Synopsis and main goals
+The dataset provided comes from the Hungarian Central Statistical Office and it is about the flights to and from the Budapest Ferenc Liszt International Airport between 2007 and 2012. In this project I have interest solely in the monthly number of passengers coming to Budapest from different countries on scheduled flights and the available number of seats. My aim is to gain an insight into the monthly variation of efficiency of ticket sales from different countries. I defined efficiency as the number of passengers/seats*100 [%]. Since the total number of passengers during the whole period varies a lot, the sales efficiency from top countries is the most crucial to study and improve at specific times. I have a detailed look at the top 5 countries. 
+
+##Preparations
+Before I start to group the data, I clean the environment, load the used R packages, set my working directory to where the "BUD flights 2007-2012 v2.xlsx" file is placed. With the use of readxl package I load the data into memory and keep only the "Incoming" and "Scheduled" lines where the number of seats higher than 0. Since more cities are available from Budapest in some countries, I summarize the data for date (month) and country. I rename the columns for easier use and then print the first 10 lines of the dataframe.
+
+```{r message=FALSE, warning=FALSE}
+rm(list=ls())
+
+library(readxl)
+require(dplyr)
+library(lubridate)
+library(ggplot2)
+library(animation)
+require(graphics)  
+
+setwd("C:/Data Science/SatRday Challenge")
+
+BUDdata <- read_excel("BUD flights 2007-2012 v2.xlsx")
+
+BUDdata <- BUDdata[grep("Incoming", BUDdata$`FLIGH DIRECTION`),]
+BUDdata <- BUDdata[which(BUDdata$`FLIGHT TYPE` == "Scheduled"),]
+BUDdata <- filter(BUDdata, BUDdata$`SEAT CAPACITY`>0)
+
+BUDdata <- group_by(BUDdata, DATE, COUNTRY)
+BUDdata <- summarise(BUDdata, sum(`NBR OF PASSENGERS`), sum(`SEAT CAPACITY`))
+names(BUDdata) <- c("DATE", "COUNTRY", "PASSENGERS", "SEATS")
+
+BUDdata[1:10,]
+```
+
+##Countries with top number of passengers (top 5 countries)
+Later in the analysis I will need to know the names of the countries with the highest number of total incoming passengers. (Ideally I would select these countries considering the statistical distribution of the data, but this is not the aim of this work and my free time is short.) I decided to focus on the top 5 countries from the total 56. The code below prepares this character vector (top5) by grouping the data for countries, summing all passengers for each of them, arranging them in descending order, selecting the first 5 lines and finally transforming the data into a vector and printing it.
+
+```{r message=FALSE, warning=FALSE}
+totalBUDdata <- group_by(BUDdata, COUNTRY)
+totalBUDdata <- summarise(totalBUDdata, sum(PASSENGERS))
+
+orderedTotalBUDdata <- arrange(totalBUDdata, desc(`sum(PASSENGERS)`))
+top5 <- orderedTotalBUDdata[1:5,1]
+top5 <- top5[['COUNTRY']]
+
+top5
+```
+
+##Preparing monthly subsets of data and calculating sales efficiency
+I decided to have a look at the sales efficiency of flights from different countries in different months throughout the given period. I was curious if there is any difference between months typical of travelling like summer or December. I want to hold primarily two subsets of data: 
+1. monthly data between 2007 and 2012 (number of PASSENGERS and SEATS are already given in the original dataset) and
+2. sums of PASSENGERS and SEATS for months, for example for all Januaries from which I calculate average monthly sales efficiency for each country.
+The code below prepares these subsets, also just for the top 5 countries (even though it will not be used for subset1), and prints their first 10-10 lines into the document.
+
+```{r message=FALSE, warning=FALSE}
+#adding efficiency to subset1
+subset1 <- BUDdata
+
+subset1$EFFICIENCY <- subset1$PASSENGERS/subset1$SEATS*100
+subset1 <- arrange(subset1, DATE)
+subset1Top5 <- filter(subset1, COUNTRY %in% as.character(top5)) 
+
+subset1Top5[1:10,]
+
+#subset2
+subset2 <- BUDdata
+subset2$MONTH <- month(subset2$DATE)
+subset2 <- group_by(subset2, MONTH, COUNTRY)
+subset2 <- summarise(subset2, sum(PASSENGERS), sum(SEATS))
+
+subset2$EFFICIENCY <- subset2$`sum(PASSENGERS)`/subset2$`sum(SEATS)`*100
+subset2Top5 <- filter(subset2, COUNTRY %in% as.character(top5)) 
+
+subset2Top5[1:10,]
+```
+
+##Visualization and results
+Box-and-Whisker Plots are convenient to compare different groups of data, like different months in the BUD dataset. Below I present monthly sales efficiency data for all countries on two ways using Box-and-Whisker Plots plus I always overlay the data points for the top 5 countries with the size indicating the number of passengers. Median notches are shown to better observe differences in central values of distributions.
+
+I will need to show the sample number (number of countries) for each month, therefore, first I include a function to locate the text and count the data in a vector. I print an example where position is 26 and sample number is 9.
+
+```{r message=FALSE, warning=FALSE}
+n_fun <- function(x){
+  return(data.frame(y = 26, label = length(x)))
+}
+
+n_fun(c(1,2,3,4,5,6,7,8,9))
+```
+
+###Animation: Monthly variation of sales efficiency between 2007 and 2012
+Below, I prepare an animation, save it and then embed it in this document. The animation uses two for loops, one for years and one for months within the given year. It subsets the subset1 data. For months it keeps all months until the given month, for example when j is 4, it will contain data for months 1-4 in year i. Then I needed to make a new column for the month and make sure that it has 12 levels (for months of the year) in all cases because I want to keep a space for all of them even though data might not be available in the given month-subset. In this loop I also filter the data for the top 5 countries then I make a plot to include in the animation.
+In the plot I show sales efficiency in different countries separated by month as a factor. I set y and x axis to make sure they always look the same on the animation. For setting x axis I needed to use the fixed 12 levels of MONTH column. I add the sample number by the above defined function and finally start to overlay the data points of top 5 countries. Text sizes and animation width and length needed to be adjusted empirically and converted between units to appear similar in the document to the later shown figure.
+
+```{r message=FALSE, warning=FALSE}
+saveGIF({
+    for(i in unique(year(subset1$DATE))){
+    
+      yearSubset <- filter(subset1, year(DATE)==i)
+    
+    for(j in unique(month(subset1$DATE))){
+    
+      monthSubset <- filter(yearSubset, month(DATE)<=j)
+      monthSubset$MONTH <- as.factor(month(monthSubset$DATE))
+      levels(monthSubset$MONTH) <- as.factor(1:12)
+      
+      monthSubsetTop5 <- filter(monthSubset, COUNTRY %in% as.character(top5))
+      
+f<-ggplot(monthSubset, aes(x = as.factor(MONTH), y = EFFICIENCY)) +
+     geom_boxplot(notch = TRUE) +
+     scale_y_continuous(limits=c(25, 100)) +
+     scale_x_discrete(breaks=as.factor(1:12), drop=FALSE, labels=c(month.abb[1:12])) +
+     stat_summary(fun.data = n_fun, geom = "text") +
+     annotate("text", x = 0.6, y = 26, label = "n:") +
+     geom_point(data = monthSubsetTop5, aes(x = as.factor(MONTH), y = EFFICIENCY, colour = as.factor(COUNTRY), size = PASSENGERS), alpha=1/3) + 
+     guides(size=FALSE, colour = guide_legend(title = "top 5 countries")) +
+     scale_size(range = c(6, 14)) +
+     labs(title = paste("Monthly variation of sales efficiency of incoming flights \n from all countries and in countries with top 5 number of passengers \n", i), x = "time (month between 2007 and 2012)", y = "sales efficiency (%)")+
+     theme(axis.title = element_text(size = 18), axis.text = element_text(size = 18), legend.text = element_text(size = 20), legend.title= element_text(size = 22), plot.title= element_text(size = 22))
+    
+  print(f)
+    }
+    }
+}, movie.name = "subset1.gif", ani.width = 900, ani.height = 600, interval = 0.4)
+```
+
+![My Animation](subset1.gif)
+
+###Figure: Average monthly sales efficiency for the period of 2007-2012
+One can see above that the years of the dataset show similar variation to each other with lower values in winter months and higher values in the summer. Similarly to the animation, below, I prepare a summarizing figure for the months of all of the available years using the subset2. 
+
+```{r message=FALSE, warning=FALSE}
+f<-ggplot(subset2, aes(x = as.factor(MONTH), y = EFFICIENCY)) +
+     geom_boxplot(notch = TRUE) +
+     scale_y_continuous(limits=c(25, 100)) +
+     scale_x_discrete(labels=c(month.abb[1:12])) +
+     stat_summary(fun.data = n_fun, geom = "text") +
+     annotate("text", x = 0.6, y = 26, label = "n:") +
+     geom_point(data = subset2Top5, aes(x = as.factor(MONTH), y = EFFICIENCY, colour = as.factor(COUNTRY), size = `sum(PASSENGERS)`), alpha=1/2) + 
+     guides(size=FALSE, colour = guide_legend(title = "top 5 countries")) +
+     scale_size(range = c(2, 10)) +
+     labs(title = "Average monthly sales efficiency of incoming flights \n from all countries and in countries with top 5 number of passengers \n All years", x = "month in 2007-2012 period", y = "average sales efficiency (%)")+
+     theme(axis.title = element_text(size = 12), axis.text = element_text(size = 12), legend.text = element_text(size = 12), legend.title= element_text(size = 14), plot.title= element_text(size = 14))
+
+ggsave("subset2.png", width = 21.17, height = 13.23, units = "cm") 
+```
+
+![My Figure](subset2.png)
+
+##Some conclusions derivable
+Based on the animation and the summarizing figure the following statements can be made:
+
+1. Sales efficiency for incoming BUD flights from all countries significantly varies throughout the months of the year with typically low values in winter months and higher values in the summer. Therefore, improvement could be focused on winter period.
+
+2. Top 5 countries follow a similar pattern (low sales efficiency in winter and high in summer) usually with high values on the distribution in comparison with other countries. One significant exception is that they do not show low values in December but even more in January. Therefore, main attention should be paid for improvement in January.   
+
+3. Among the top 5 countries UK performs the best, the second seems to be The Netherlands, which are both countries where Hungarians typically live and not only holiday destinations. Italy seems to perform the worst regarding values of sales efficiency indicating that improvement would be necessary. Germany has the highest number of passengers (size of the markers) but seems its sales efficiency drops in August which raises attention.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
